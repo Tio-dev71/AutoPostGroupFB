@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionStatus {
+  inactive
+  active
+  expired
+  canceled
+}
+
+enum PaymentOrderStatus {
+  pending
+  paid
+  expired
+  canceled
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  role         String         @default("user")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  subscription Subscription?
+  paymentOrders PaymentOrder[]
+  devices      Device[]
+  refreshTokens RefreshToken[]
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String             @unique
+  status    SubscriptionStatus @default(inactive)
+  plan      String             @default("monthly")
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PaymentOrder {
+  id          String             @id @default(cuid())
+  userId      String
+  code        String             @unique
+  amount      Int
+  status      PaymentOrderStatus @default(pending)
+  paidAt      DateTime?
+  expiresAt   DateTime
+  rawMatchedTransactionId String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SePayTransaction {
+  id                 String   @id @default(cuid())
+  gateway            String?
+  transactionDate    DateTime?
+  accountNumber      String?
+  subAccount         String?
+  transferType       String?
+  transferAmount     Int      @default(0)
+  accumulated        Int      @default(0)
+  code               String?
+  content            String?
+  referenceCode      String?  @unique
+  description        String?
+  rawBody            Json
+  createdAt          DateTime @default(now())
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  userId      String
+  fingerprint String
+  name        String?
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
