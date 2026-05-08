@@ -1,11 +1,23 @@
 import { prisma } from '../lib/prisma.js';
 
-export function getMonthlyPrice() {
-  return Number(process.env.APP_MONTHLY_PRICE || 499000);
+export interface PricingPlan {
+  id: string;
+  name: string;
+  months: number;
+  days: number;
+  priceUsd: number;
+  priceVnd: number;
+  badge?: string;
 }
 
-export function getSubscriptionDays() {
-  return Number(process.env.APP_SUBSCRIPTION_DAYS || 30);
+export const PRICING_PLANS: PricingPlan[] = [
+  { id: '1month', name: '1 Tháng', months: 1, days: 30, priceUsd: 29, priceVnd: 725000 },
+  { id: '2months', name: '2 Tháng', months: 2, days: 60, priceUsd: 49, priceVnd: 1225000, badge: 'Phổ biến' },
+  { id: '3months', name: '3 Tháng', months: 3, days: 90, priceUsd: 69, priceVnd: 1725000, badge: 'Tiết kiệm nhất' },
+];
+
+export function getPlanById(planId: string): PricingPlan | undefined {
+  return PRICING_PLANS.find((p) => p.id === planId);
 }
 
 export function generatePaymentCode() {
@@ -13,7 +25,7 @@ export function generatePaymentCode() {
   return `AUTO${Date.now().toString().slice(-6)}${random}`;
 }
 
-export async function extendSubscription(userId: string, days = getSubscriptionDays()) {
+export async function extendSubscription(userId: string, days: number) {
   const current = await prisma.subscription.upsert({
     where: { userId },
     create: { userId, status: 'inactive' },

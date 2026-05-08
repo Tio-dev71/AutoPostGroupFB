@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { extendSubscription } from '../services/paymentService.js';
+import { extendSubscription, PRICING_PLANS } from '../services/paymentService.js';
 
 export const sepayWebhookRouter = Router();
 
@@ -61,7 +61,10 @@ sepayWebhookRouter.post('/sepay', async (req, res, next) => {
       });
     });
 
-    await extendSubscription(order.userId);
+    const plan = PRICING_PLANS.find((p) => p.priceVnd === order.amount);
+    const days = plan?.days || 30;
+
+    await extendSubscription(order.userId, days);
     return res.json({ success: true });
   } catch (err: any) {
     if (err.code === 'P2002') {

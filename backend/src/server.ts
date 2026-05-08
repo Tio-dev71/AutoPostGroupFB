@@ -33,6 +33,6 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   return res.status(status).json({ success: false, error: err.message || 'Internal server error' });
 });
 
-app.listen(port, () => {
-  console.log(`AutoPost license backend listening on :${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`AutoPost license backend listening on 0.0.0.0:${port}`);
 });

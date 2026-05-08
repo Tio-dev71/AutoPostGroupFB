@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, BadgeCheck, CalendarClock, Copy, LockKeyhole, QrCode, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowRight, BadgeCheck, CalendarClock, Copy, Crown, LockKeyhole, QrCode, RefreshCw, Sparkles, Star, Zap } from 'lucide-react';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { createSePayOrder, getPaymentOrder, type SePayOrder, type SePayPaymentInfo } from '@/services/paymentService';
+import { createSePayOrder, getPaymentOrder, type PricingPlan, type SePayOrder, type SePayPaymentInfo } from '@/services/paymentService';
 
 const currency = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
+
+const PLANS: PricingPlan[] = [
+  { id: '1month', name: '1 Tháng', months: 1, days: 30, priceUsd: 29, priceVnd: 725000 },
+  { id: '2months', name: '2 Tháng', months: 2, days: 60, priceUsd: 49, priceVnd: 1225000, badge: 'Phổ biến' },
+  { id: '3months', name: '3 Tháng', months: 3, days: 90, priceUsd: 69, priceVnd: 1725000, badge: 'Tiết kiệm nhất' },
+];
+
+const planIcons = [<Zap key="z" className="h-6 w-6" />, <Star key="s" className="h-6 w-6" />, <Crown key="c" className="h-6 w-6" />];
 
 export function LoginPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -12,6 +20,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string>('2months');
   const [order, setOrder] = useState<SePayOrder | null>(null);
   const [payment, setPayment] = useState<SePayPaymentInfo | null>(null);
   const [polling, setPolling] = useState(false);
@@ -59,11 +68,11 @@ export function LoginPage() {
     }
   };
 
-  const handleCreatePayment = async () => {
+  const handleCreatePayment = async (planId: string) => {
     setError('');
     setLoading(true);
     try {
-      const result = await createSePayOrder();
+      const result = await createSePayOrder(planId);
       setOrder(result.order);
       setPayment(result.payment);
     } catch (err) {
@@ -77,90 +86,128 @@ export function LoginPage() {
     await navigator.clipboard.writeText(value);
   };
 
+  // ─── Payment screen (logged in, no active sub) ───
   if (user && !active) {
     return (
       <div className="min-h-screen overflow-hidden bg-[#05070f] text-white">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.35),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.28),transparent_34%)]" />
-        <main className="relative mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-10">
-          <section className="grid w-full gap-8 rounded-[2rem] border border-white/10 bg-white/[0.06] p-8 shadow-2xl shadow-blue-950/40 backdrop-blur-2xl md:grid-cols-[1.05fr_0.95fr]">
-            <div className="space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm text-amber-100">
-                <CalendarClock className="h-4 w-4" /> Cần kích hoạt gói tháng
-              </div>
-              <div>
-                <h1 className="text-4xl font-bold tracking-tight md:text-5xl">Thanh toán SePay để mở khóa AutoPost</h1>
-                <p className="mt-4 max-w-2xl text-lg text-slate-300">
-                  Xin chào {user.name}. Chuyển khoản đúng nội dung thanh toán, backend sẽ tự nhận webhook SePay và mở khóa tài khoản.
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {['Webhook tự xác nhận tiền vào', 'Mã chuyển khoản riêng từng đơn', 'Gia hạn tự động 30 ngày'].map((item) => (
-                  <div key={item} className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-200">
-                    <ShieldCheck className="mb-3 h-5 w-5 text-emerald-300" />
-                    {item}
-                  </div>
-                ))}
-              </div>
-              {error && <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
-            </div>
+        <main className="relative mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-6 py-10">
 
-            <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/80 p-6 shadow-xl">
+          {/* Header */}
+          <div className="mb-10 text-center">
+            <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm text-amber-100">
+              <CalendarClock className="h-4 w-4" /> Chọn gói để mở khóa AutoPost
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight md:text-5xl">
+              Xin chào, {user.name}
+            </h1>
+            <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-300">
+              Chọn gói phù hợp và chuyển khoản. Hệ thống sẽ tự động mở khóa tài khoản sau khi nhận được tiền.
+            </p>
+          </div>
+
+          {!payment ? (
+            <>
+              {/* Plan cards */}
+              <div className="grid w-full max-w-4xl gap-6 md:grid-cols-3">
+                {PLANS.map((plan, i) => {
+                  const isSelected = selectedPlan === plan.id;
+                  const perMonth = Math.round(plan.priceUsd / plan.months);
+                  return (
+                    <button
+                      key={plan.id}
+                      onClick={() => setSelectedPlan(plan.id)}
+                      className={`relative rounded-[1.5rem] border-2 p-6 text-left transition-all duration-300 ${
+                        isSelected
+                          ? 'border-blue-400 bg-blue-500/10 shadow-xl shadow-blue-500/20 scale-[1.03]'
+                          : 'border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.07]'
+                      }`}
+                    >
+                      {plan.badge && (
+                        <span className="absolute -top-3 right-4 rounded-full bg-gradient-to-r from-blue-500 to-violet-500 px-3 py-1 text-xs font-bold text-white shadow-lg">
+                          {plan.badge}
+                        </span>
+                      )}
+                      <div className={`mb-4 inline-flex rounded-2xl p-3 ${isSelected ? 'bg-blue-500/20 text-blue-300' : 'bg-white/10 text-slate-300'}`}>
+                        {planIcons[i]}
+                      </div>
+                      <h3 className="text-xl font-bold">{plan.name}</h3>
+                      <div className="mt-3">
+                        <span className="text-4xl font-black">${plan.priceUsd}</span>
+                        <span className="ml-1 text-sm text-slate-400">/ {plan.months} tháng</span>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-400">{currency.format(plan.priceVnd)}</p>
+                      <p className="mt-1 text-xs text-slate-500">~${perMonth}/tháng</p>
+                      <div className="mt-4 space-y-2 text-sm text-slate-300">
+                        <div>✓ {plan.days} ngày sử dụng</div>
+                        <div>✓ Đăng bài tự động</div>
+                        <div>✓ AI rewrite nội dung</div>
+                        <div>✓ Upload ảnh native</div>
+                      </div>
+                      {isSelected && (
+                        <div className="mt-4 rounded-xl bg-blue-500/20 py-2 text-center text-sm font-semibold text-blue-200">
+                          ✓ Đã chọn
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Pay button */}
+              <button
+                className="mt-8 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-violet-500 px-8 py-4 text-lg font-semibold text-white shadow-lg shadow-blue-500/25 transition hover:scale-[1.02] hover:shadow-blue-500/40 disabled:opacity-60"
+                onClick={() => handleCreatePayment(selectedPlan)}
+                disabled={loading}
+              >
+                {loading ? 'Đang tạo đơn...' : 'Thanh toán ngay'} <ArrowRight className="h-5 w-5" />
+              </button>
+
+              {error && <div className="mt-4 rounded-2xl border border-red-400/30 bg-red-500/10 px-6 py-3 text-sm text-red-200">{error}</div>}
+            </>
+          ) : (
+            /* QR payment section */
+            <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-slate-950/80 p-8 shadow-2xl">
               <div className="mb-5 flex items-center justify-between">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-blue-300">Monthly Pro</p>
-                  <h2 className="mt-2 text-3xl font-bold">{payment ? currency.format(payment.amount) : 'Theo cấu hình backend'}</h2>
+                  <p className="text-sm uppercase tracking-[0.3em] text-blue-300">Thanh toán SePay</p>
+                  <h2 className="mt-2 text-3xl font-bold">{currency.format(payment.amount)}</h2>
                 </div>
                 <BadgeCheck className="h-10 w-10 text-blue-300" />
               </div>
 
-              {!payment ? (
-                <>
-                  <ul className="space-y-3 text-sm text-slate-300">
-                    <li>✓ Đăng bài nhóm Facebook tự động</li>
-                    <li>✓ Upload ảnh bằng clipboard native macOS</li>
-                    <li>✓ AI rewrite nội dung bán hàng</li>
-                    <li>✓ License backend PostgreSQL/VPS</li>
-                  </ul>
-                  <button
-                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-violet-500 px-5 py-4 font-semibold text-white shadow-lg shadow-blue-500/25 transition hover:scale-[1.01] hover:shadow-blue-500/40 disabled:opacity-60"
-                    onClick={handleCreatePayment}
-                    disabled={loading}
-                  >
-                    {loading ? 'Đang tạo đơn...' : 'Tạo thanh toán SePay'} <ArrowRight className="h-4 w-4" />
-                  </button>
-                </>
-              ) : (
-                <div className="space-y-4">
-                  <div className="overflow-hidden rounded-2xl border border-white/10 bg-white p-3">
-                    <img src={payment.qrUrl} alt="QR thanh toán SePay" className="mx-auto max-h-72 w-full object-contain" />
-                  </div>
-                  <PaymentLine label="Ngân hàng" value={payment.bankName} onCopy={() => copy(payment.bankName)} />
-                  <PaymentLine label="Số tài khoản" value={payment.accountNumber} onCopy={() => copy(payment.accountNumber)} />
-                  <PaymentLine label="Chủ tài khoản" value={payment.accountHolder} onCopy={() => copy(payment.accountHolder)} />
-                  <PaymentLine label="Số tiền" value={currency.format(payment.amount)} onCopy={() => copy(String(payment.amount))} />
-                  <PaymentLine label="Nội dung CK" value={payment.transferCode} highlight onCopy={() => copy(payment.transferCode)} />
-
-                  <div className="rounded-2xl border border-blue-300/20 bg-blue-400/10 p-4 text-sm text-blue-100">
-                    <div className="flex items-center gap-2 font-semibold">
-                      {polling ? <RefreshCw className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
-                      Đang chờ SePay xác nhận...
-                    </div>
-                    <p className="mt-2 text-blue-100/80">Trạng thái đơn: {order?.status}. App tự kiểm tra mỗi 5 giây.</p>
-                  </div>
+              <div className="space-y-4">
+                <div className="overflow-hidden rounded-2xl border border-white/10 bg-white p-3">
+                  <img src={payment.qrUrl} alt="QR thanh toán SePay" className="mx-auto max-h-72 w-full object-contain" />
                 </div>
-              )}
+                <PaymentLine label="Ngân hàng" value={payment.bankName} onCopy={() => copy(payment.bankName)} />
+                <PaymentLine label="Số tài khoản" value={payment.accountNumber} onCopy={() => copy(payment.accountNumber)} />
+                <PaymentLine label="Chủ tài khoản" value={payment.accountHolder} onCopy={() => copy(payment.accountHolder)} />
+                <PaymentLine label="Số tiền" value={currency.format(payment.amount)} onCopy={() => copy(String(payment.amount))} />
+                <PaymentLine label="Nội dung CK" value={payment.transferCode} highlight onCopy={() => copy(payment.transferCode)} />
 
-              <button className="mt-3 w-full rounded-2xl border border-white/10 px-5 py-3 text-sm text-slate-300 hover:bg-white/5" onClick={logout}>
-                Đăng xuất
-              </button>
-              {subscriptionEndsAt && <p className="mt-4 text-xs text-emerald-300">Hạn dùng: {new Date(subscriptionEndsAt).toLocaleString('vi-VN')}</p>}
+                <div className="rounded-2xl border border-blue-300/20 bg-blue-400/10 p-4 text-sm text-blue-100">
+                  <div className="flex items-center gap-2 font-semibold">
+                    {polling ? <RefreshCw className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                    Đang chờ SePay xác nhận...
+                  </div>
+                  <p className="mt-2 text-blue-100/80">Trạng thái: {order?.status}. App tự kiểm tra mỗi 5 giây.</p>
+                </div>
+              </div>
             </div>
-          </section>
+          )}
+
+          {/* Logout */}
+          <button className="mt-6 rounded-2xl border border-white/10 px-6 py-3 text-sm text-slate-300 hover:bg-white/5" onClick={logout}>
+            Đăng xuất
+          </button>
+          {subscriptionEndsAt && <p className="mt-3 text-xs text-emerald-300">Hạn dùng: {new Date(subscriptionEndsAt).toLocaleString('vi-VN')}</p>}
         </main>
       </div>
     );
   }
 
+  // ─── Login / Register screen ───
   return (
     <div className="min-h-screen overflow-hidden bg-[#05070f] text-white">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(37,99,235,0.35),transparent_30%),radial-gradient(circle_at_80%_30%,rgba(236,72,153,0.22),transparent_28%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,1))]" />
@@ -181,6 +228,7 @@ export function LoginPage() {
             {[
               ['Bảo mật:', 'Tuyệt đối bảo mật 100%'],
               ['Hệ thống', 'Update đầy đủ linh hoạt'],
+              ['Giá cả', 'Chỉ từ $29/tháng'],
             ].map(([title, desc]) => (
               <div key={title} className="rounded-3xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur-xl">
                 <LockKeyhole className="mb-4 h-6 w-6 text-blue-300" />

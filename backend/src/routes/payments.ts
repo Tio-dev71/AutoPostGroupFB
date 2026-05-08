@@ -1,13 +1,23 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, type AuthRequest } from '../middleware/auth.js';
-import { buildVietQrUrl, generatePaymentCode, getMonthlyPrice } from '../services/paymentService.js';
+import { buildVietQrUrl, generatePaymentCode, getPlanById, PRICING_PLANS } from '../services/paymentService.js';
 
 export const paymentsRouter = Router();
 
+paymentsRouter.get('/plans', (_req, res) => {
+  res.json({ success: true, plans: PRICING_PLANS });
+});
+
 paymentsRouter.post('/sepay/create', requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const amount = getMonthlyPrice();
+    const planId = req.body?.planId || '1month';
+    const plan = getPlanById(planId);
+    if (!plan) {
+      return res.status(400).json({ success: false, error: 'Gói không hợp lệ' });
+    }
+
+    const amount = plan.priceVnd;
     const code = generatePaymentCode();
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
@@ -23,6 +33,7 @@ paymentsRouter.post('/sepay/create', requireAuth, async (req: AuthRequest, res, 
     return res.json({
       success: true,
       order,
+      plan,
       payment: {
         bankName: process.env.SEPAY_BANK_NAME || '',
         accountNumber: process.env.SEPAY_ACCOUNT_NUMBER || '',
