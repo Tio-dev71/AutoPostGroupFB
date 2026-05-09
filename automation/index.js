@@ -3,7 +3,7 @@ const stealth = require('puppeteer-extra-plugin-stealth')();
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 chromium.use(stealth);
 
 // ═══════════════════════════════════════════════════════════════════
@@ -586,42 +586,38 @@ ACTIONS.open_chrome = async (payload) => {
   const chromePath = payload.chromePath || findChromePath();
 
   sendLog('info', `Mở Chrome với profile: ${profileDir}`);
-  if (chromePath) {
-    sendLog('info', `Chrome path: ${chromePath}`);
-  } else {
-    sendLog('warning', 'Không tìm thấy Chrome, thử dùng Playwright bundled browser...');
+  if (!chromePath) {
+    sendResponse({
+      success: false,
+      error: 'Không tìm thấy Google Chrome. Vui lòng cài Chrome hoặc nhập Chrome Path thủ công trong app.',
+    });
+    return;
   }
 
+  sendLog('info', `Chrome path: ${chromePath}`);
+
   try {
-    const launchOpts = buildLaunchOptions(payload.chromePath);
+    const chromeArgs = [
+      `--user-data-dir=${profileDir}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      'https://www.facebook.com',
+    ];
 
-    const { context, profileDir: activeProfileDir, usedRecovery } = await launchPersistentContextSafe(
-      profileDir,
-      launchOpts,
-      true
-    );
-
-    const page = context.pages()[0] || await context.newPage();
-    await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded', timeout: 25000 });
-    await randomDelay(2000, 3000);
-
-    // Check if logged in
-    const isLoggedIn = await page.evaluate(() => {
-      return !document.querySelector('input[name="email"]');
+    const chrome = spawn(chromePath, chromeArgs, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
     });
+    chrome.unref();
 
     sendResponse({
       success: true,
-      isLoggedIn,
-      profileDir: activeProfileDir,
-      usedRecovery,
-      message: usedRecovery
-        ? 'Chrome đã mở bằng profile dự phòng — hãy đăng nhập Facebook lại trong cửa sổ vừa mở'
-        : isLoggedIn
-          ? 'Chrome đã mở — Facebook đã đăng nhập!'
-          : 'Chrome đã mở — Vui lòng đăng nhập Facebook trong cửa sổ vừa mở',
+      isLoggedIn: false,
+      profileDir,
+      usedRecovery: false,
+      message: 'Chrome đã mở — Vui lòng đăng nhập Facebook trong cửa sổ vừa mở',
     });
-    // Keep browser open for user to interact
   } catch (err) {
     sendLog('error', `Lỗi mở Chrome: ${err.message}`);
     sendResponse({ success: false, error: err.message });
