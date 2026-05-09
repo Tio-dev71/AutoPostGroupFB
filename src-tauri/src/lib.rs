@@ -1,7 +1,7 @@
+use base64::{engine::general_purpose, Engine as _};
 use std::fs;
 use std::process::Command as StdCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
-use base64::{engine::general_purpose, Engine as _};
 use tauri::Manager;
 
 // Rust command: run automation action via Node.js
@@ -29,15 +29,20 @@ async fn run_automation(
         .ok_or_else(|| "Không xác định được thư mục automation".to_string())?
         .to_path_buf();
 
+    let node_bin = find_node_binary().ok_or_else(|| {
+        "Không thể chạy node: máy chưa cài Node.js hoặc Node.js chưa có trong PATH. Vui lòng cài Node.js LTS từ https://nodejs.org rồi mở lại app."
+            .to_string()
+    })?;
+
     // Spawn node process from the automation directory so local dependencies resolve correctly.
-    let output = StdCommand::new("node")
+    let output = StdCommand::new(&node_bin)
         .arg(&script_path)
         .arg(&action)
         .arg(&payload)
         .current_dir(&automation_dir)
         .env("NODE_PATH", find_node_modules(&automation_dir))
         .output()
-        .map_err(|e| format!("Không thể chạy node: {}", e))?;
+        .map_err(|e| format!("Không thể chạy node tại {}: {}", node_bin.to_string_lossy(), e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -59,7 +64,10 @@ fn automation_script_candidates(app: &tauri::AppHandle) -> Vec<std::path::PathBu
 
     vec![
         resource_dir.join("automation").join("index.js"),
-        resource_dir.join("_up_").join("automation").join("index.js"),
+        resource_dir
+            .join("_up_")
+            .join("automation")
+            .join("index.js"),
         resource_dir.join("index.js"),
         exe_dir.join("automation").join("index.js"),
         exe_dir.join("_up_").join("automation").join("index.js"),
@@ -70,7 +78,58 @@ fn automation_script_candidates(app: &tauri::AppHandle) -> Vec<std::path::PathBu
 }
 
 fn find_automation_script(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    automation_script_candidates(app).into_iter().find(|p| p.exists())
+    automation_script_candidates(app)
+        .into_iter()
+        .find(|p| p.exists())
+}
+
+fn find_node_binary() -> Option<std::path::PathBuf> {
+    let mut candidates = vec![std::path::PathBuf::from("node")];
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(program_files) = std::env::var_os("ProgramFiles") {
+            candidates.push(
+                std::path::PathBuf::from(program_files)
+                    .join("nodejs")
+                    .join("node.exe"),
+            );
+        }
+        if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+            candidates.push(
+                std::path::PathBuf::from(program_files_x86)
+                    .join("nodejs")
+                    .join("node.exe"),
+            );
+        }
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(
+                std::path::PathBuf::from(local_app_data)
+                    .join("Programs")
+                    .join("nodejs")
+                    .join("node.exe"),
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        candidates.push(std::path::PathBuf::from("/usr/local/bin/node"));
+        candidates.push(std::path::PathBuf::from("/opt/homebrew/bin/node"));
+        candidates.push(std::path::PathBuf::from("/usr/bin/node"));
+    }
+
+    candidates.into_iter().find(|candidate| {
+        if candidate.components().count() > 1 && !candidate.exists() {
+            return false;
+        }
+
+        StdCommand::new(candidate)
+            .arg("--version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    })
 }
 
 // Find node_modules path for automation dependencies
@@ -100,9 +159,13 @@ async fn check_dependencies() -> Result<String, String> {
     let node_check = StdCommand::new("node")
         .arg("--version")
         .output()
-        .map_err(|_| "Node.js không được cài đặt. Vui lòng cài Node.js từ https://nodejs.org".to_string())?;
+        .map_err(|_| {
+            "Node.js không được cài đặt. Vui lòng cài Node.js từ https://nodejs.org".to_string()
+        })?;
 
-    let node_version = String::from_utf8_lossy(&node_check.stdout).trim().to_string();
+    let node_version = String::from_utf8_lossy(&node_check.stdout)
+        .trim()
+        .to_string();
 
     // Check if automation node_modules exist
     let automation_dir = std::env::current_dir()
@@ -166,8 +229,7 @@ async fn save_generated_image(
         .map_err(|e| format!("Không tìm thấy thư mục app data: {}", e))?;
 
     let image_dir = app_data_dir.join("generated-images");
-    fs::create_dir_all(&image_dir)
-        .map_err(|e| format!("Không thể tạo thư mục ảnh AI: {}", e))?;
+    fs::create_dir_all(&image_dir).map_err(|e| format!("Không thể tạo thư mục ảnh AI: {}", e))?;
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -175,8 +237,7 @@ async fn save_generated_image(
         .as_millis();
     let file_path = image_dir.join(format!("ai-image-{}.{}", timestamp, cleaned_ext));
 
-    fs::write(&file_path, image_bytes)
-        .map_err(|e| format!("Không thể lưu ảnh AI: {}", e))?;
+    fs::write(&file_path, image_bytes).map_err(|e| format!("Không thể lưu ảnh AI: {}", e))?;
 
     Ok(file_path.to_string_lossy().to_string())
 }
